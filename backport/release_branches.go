@@ -47,11 +47,12 @@ func BackportTargetsFromPayload(branches []*github.Branch, prInfo PrInfo) ([]ghu
 }
 
 // BackportTarget finds the most appropriate base branch (target) given the backport label 'label'
-// This function takes the label, like `backport v11.2.x`, and finds the most recent `release-` branch
-// that matches the pattern.
+// This function accepts both the short form `backport v11.2.x` and the release-branch
+// form `backport release-v2.8`, and finds the most recent `release-` branch that matches.
 func BackportTarget(label string, branches []*github.Branch) (ghutil.Branch, error) {
-	version := strings.TrimPrefix(label, "backport")
-	labelString := strings.ReplaceAll(strings.TrimSpace(version), "x", "0")
+	version := strings.TrimSpace(strings.TrimPrefix(label, "backport"))
+	version = strings.TrimPrefix(version, "release-")
+	labelString := strings.ReplaceAll(version, "x", "0")
 	major, minor, _ := ghutil.MajorMinorPatch(labelString)
 
 	return ghutil.MostRecentBranch(major, minor, branches)
