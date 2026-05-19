@@ -27,16 +27,16 @@ func TestBackportTarget_Formats(t *testing.T) {
 		want     string
 	}{
 		// Tempo: "release-"-prefixed label against 2-component branches.
-		{"tempo release-v2.8", tempoBranches, "backport release-v2.8", "release-v2.8"},
-		{"tempo release-v2.9", tempoBranches, "backport release-v2.9", "release-v2.9"},
-		{"tempo release-v2.10", tempoBranches, "backport release-v2.10", "release-v2.10"},
+		{"tempo release-v2.8", tempoBranches, "release-v2.8", "release-v2.8"},
+		{"tempo release-v2.9", tempoBranches, "release-v2.9", "release-v2.9"},
+		{"tempo release-v2.10", tempoBranches, "release-v2.10", "release-v2.10"},
 
 		// Grafana: short-form label against 3-component branches picks newest patch.
-		{"grafana v11.2.x", grafanaBranches, "backport v11.2.x", "release-v11.2.1"},
+		{"grafana v11.2.x", grafanaBranches, "v11.2.x", "release-v11.2.1"},
 
 		// Grafana: 3-component branches without the "v" prefix also resolve.
-		{"grafana v8.2.x (no-v branch)", grafanaBranches, "backport v8.2.x", "release-8.2.2"},
-		{"grafana 8.2.x (no-v branch)", grafanaBranches, "backport 8.2.x", "release-8.2.2"},
+		{"grafana v8.2.x (no-v branch)", grafanaBranches, "v8.2.x", "release-8.2.2"},
+		{"grafana 8.2.x (no-v branch)", grafanaBranches, "8.2.x", "release-8.2.2"},
 	}
 
 	for _, tc := range cases {

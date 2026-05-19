@@ -27,6 +27,7 @@ func GetInputs() Inputs {
 	r := strings.Split(ownerRepo, "/")
 	owner := r[0]
 	repo := r[1]
+
 	return Inputs{
 		Pattern: pattern,
 		Owner:   owner,
