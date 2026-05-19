@@ -31,7 +31,7 @@ func TestBackportTargets(t *testing.T) {
 			"backport v11.0.x",
 		}
 
-		targets, err := BackportTargets(branches, "standard", labels)
+		targets, err := BackportTargets(branches, labels)
 		require.NoError(t, err)
 		require.Equal(t, []string{
 			"release-12.2.12",
@@ -51,7 +51,7 @@ func TestBackportTargets(t *testing.T) {
 			"add-to-changelog",
 		}
 
-		targets, err := BackportTargets(branches, "standard", labels)
+		targets, err := BackportTargets(branches, labels)
 		require.NoError(t, err)
 		require.Equal(t, []string{
 			"release-12.2.12",

@@ -45,7 +45,7 @@ func TestBackportTarget_Formats(t *testing.T) {
 			for i, n := range tc.branches {
 				br[i] = &github.Branch{Name: github.String(n)}
 			}
-			target, err := BackportTarget(tc.label, "standard", br)
+			target, err := BackportTarget(tc.label, br)
 			require.NoError(t, err)
 			require.Equal(t, tc.want, target.Name)
 		})

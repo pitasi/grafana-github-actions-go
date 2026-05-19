@@ -14,6 +14,7 @@ import (
 
 type BranchClient interface {
 	ListBranches(ctx context.Context, owner string, repo string, opts *github.BranchListOptions) ([]*github.Branch, *github.Response, error)
+	GetBranch(ctx context.Context, owner, repo, branch string, followRedirects bool) (*github.Branch, *github.Response, error)
 }
 
 type Branch struct {
@@ -50,19 +51,6 @@ func SortBranches(a, b Branch) int {
 	}
 
 	return 1
-}
-
-func FindBranchByName(name string, branches []*github.Branch) (Branch, bool) {
-	for _, b := range branches {
-		if b.GetName() == name {
-			return Branch{
-				Name: b.GetName(),
-				SHA:  b.GetCommit().GetSHA(),
-			}, true
-		}
-	}
-
-	return Branch{}, false
 }
 
 func MostRecentBranch(major, minor string, branches []*github.Branch) (Branch, error) {
@@ -116,7 +104,7 @@ func GetReleaseBranches(ctx context.Context, log *slog.Logger, client BranchClie
 	for {
 		log.Debug("listing branches", "page", page, "count", count)
 		b, r, err := client.ListBranches(ctx, owner, repo, &github.BranchListOptions{
-			Protected: github.Bool(true),
+			//Protected: github.Bool(true),
 			ListOptions: github.ListOptions{
 				Page:    page,
 				PerPage: count,
@@ -135,4 +123,23 @@ func GetReleaseBranches(ctx context.Context, log *slog.Logger, client BranchClie
 	}
 
 	return branches, nil
+}
+
+func GetReleaseBranchByNames(ctx context.Context, log *slog.Logger, client BranchClient, owner, repo string, names []string) ([]Branch, error) {
+	var branches []Branch
+
+	for _, name := range names {
+		b, _, err := client.GetBranch(ctx, owner, repo, name, true)
+		if err != nil {
+			return nil, err
+		}
+
+		branches = append(branches, Branch{
+			Name: b.GetName(),
+			SHA:  b.GetCommit().GetSHA(),
+		})
+	}
+
+	return branches, nil
+
 }

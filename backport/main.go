@@ -74,21 +74,44 @@ func main() {
 
 	log = log.With("repo", fmt.Sprintf("%s/%s", prInfo.RepoOwner, prInfo.RepoName), "pull_request", prInfo.Pr.GetNumber())
 
-	branches, err := ghutil.GetReleaseBranches(ctx, log, client.Repositories, prInfo.RepoOwner, prInfo.RepoName)
-	if err != nil {
-		log.Error("error getting branches", "error", err)
-		panic(err)
-	}
+	var targets []ghutil.Branch
 
-	targets, err := BackportTargetsFromPayload(branches, branchStrategy, prInfo)
-	if err != nil {
-		if errors.Is(err, ErrorNotMerged) {
-			log.Warn("pull request is not merged; nothing to do")
-			return
+	if branchStrategy == "mimir" {
+		targetNames, err := BackportTargetNamesMimir(prInfo)
+		if err != nil {
+			log.Error("error listing targets", "error", err)
+			panic(err)
 		}
 
-		log.Error("error getting backport targets", "error", err)
-		panic(err)
+		ts, err := ghutil.GetReleaseBranchByNames(ctx, log, client.Repositories, prInfo.RepoOwner, prInfo.RepoName, targetNames)
+		if err != nil {
+			if errors.Is(err, ErrorNotMerged) {
+				log.Warn("pull request is not merged; nothing to do")
+				return
+			}
+
+			log.Error("error getting backport targets", "error", err)
+			panic(err)
+		}
+		targets = ts
+	} else {
+		branches, err := ghutil.GetReleaseBranches(ctx, log, client.Repositories, prInfo.RepoOwner, prInfo.RepoName)
+		if err != nil {
+			log.Error("error getting branches", "error", err)
+			panic(err)
+		}
+
+		ts, err := BackportTargetsFromPayload(branches, prInfo)
+		if err != nil {
+			if errors.Is(err, ErrorNotMerged) {
+				log.Warn("pull request is not merged; nothing to do")
+				return
+			}
+
+			log.Error("error getting backport targets", "error", err)
+			panic(err)
+		}
+		targets = ts
 	}
 
 	for _, target := range targets {
