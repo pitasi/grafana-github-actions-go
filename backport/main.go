@@ -55,10 +55,11 @@ func main() {
 		inputs = GetInputs()
 
 		// If specified, takes precedence over event data
-		repoOwner   = os.Getenv("REPO_OWNER")
-		repoName    = os.Getenv("REPO_NAME")
-		prNumber, _ = strconv.Atoi(os.Getenv("PR_NUMBER"))
-		prLabel     = os.Getenv("PR_LABEL")
+		repoOwner      = os.Getenv("REPO_OWNER")
+		repoName       = os.Getenv("REPO_NAME")
+		prNumber, _    = strconv.Atoi(os.Getenv("PR_NUMBER"))
+		prLabel        = os.Getenv("PR_LABEL")
+		branchStrategy = os.Getenv("BRANCH_STRATEGY")
 	)
 
 	if token == "" {
@@ -79,7 +80,7 @@ func main() {
 		panic(err)
 	}
 
-	targets, err := BackportTargetsFromPayload(branches, prInfo)
+	targets, err := BackportTargetsFromPayload(branches, branchStrategy, prInfo)
 	if err != nil {
 		if errors.Is(err, ErrorNotMerged) {
 			log.Warn("pull request is not merged; nothing to do")

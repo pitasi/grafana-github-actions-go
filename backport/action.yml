@@ -25,6 +25,9 @@ inputs:
   repo_name:
     description: The name of the repository the PR is in
     required: false
+  branch_strategy:
+    description: The strategy for extracting the target branch name from the label. Can be left empty or set to 'mimir'.
+    required: false
 
 runs:
   using: composite
@@ -39,6 +42,7 @@ runs:
         PR_NUMBER: ${{ inputs.pr_number }}
         REPO_OWNER: ${{ inputs.repo_owner }}
         REPO_NAME: ${{ inputs.repo_name }}
+        BRANCH_STRATEGY: ${{ inputs.branch_strategy }}
       run: |
         set -e
         # Download the action from the store

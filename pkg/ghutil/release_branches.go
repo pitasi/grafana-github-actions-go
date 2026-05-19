@@ -52,6 +52,19 @@ func SortBranches(a, b Branch) int {
 	return 1
 }
 
+func FindBranchByName(name string, branches []*github.Branch) (Branch, bool) {
+	for _, b := range branches {
+		if b.GetName() == name {
+			return Branch{
+				Name: b.GetName(),
+				SHA:  b.GetCommit().GetSHA(),
+			}, true
+		}
+	}
+
+	return Branch{}, false
+}
+
 func MostRecentBranch(major, minor string, branches []*github.Branch) (Branch, error) {
 	b := []Branch{}
 

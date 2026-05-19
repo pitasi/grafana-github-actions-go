@@ -80,14 +80,14 @@ func TestMostRecentBranch(t *testing.T) {
 func TestBackportTarget(t *testing.T) {
 	assertError := func(t *testing.T, label string, branches []*github.Branch) {
 		t.Helper()
-		b, err := BackportTarget(label, branches)
+		b, err := BackportTarget(label, "standard", branches)
 		assert.Error(t, err)
 		assert.Empty(t, b)
 	}
 
 	assertBranch := func(t *testing.T, label string, branches []*github.Branch, branch string) {
 		t.Helper()
-		b, err := BackportTarget(label, branches)
+		b, err := BackportTarget(label, "standard", branches)
 		assert.NoError(t, err)
 		assert.Equal(t, branch, b.Name)
 	}
