@@ -57,6 +57,7 @@ func main() {
 		repoName    = os.Getenv("REPO_NAME")
 		prNumber, _ = strconv.Atoi(os.Getenv("PR_NUMBER"))
 		prLabel     = os.Getenv("PR_LABEL")
+		runID       = os.Getenv("GITHUB_RUN_ID")
 	)
 
 	if token == "" {
@@ -103,6 +104,7 @@ func main() {
 			Owner:             prInfo.RepoOwner,
 			Repository:        prInfo.RepoName,
 			MergeBase:         mergeBase,
+			RunID:             runID,
 		}
 
 		commandRunner := NewShellCommandRunner(log)
