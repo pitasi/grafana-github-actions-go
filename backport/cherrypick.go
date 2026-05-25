@@ -39,7 +39,7 @@ func CreateCherryPickBranch(ctx context.Context, runner CommandRunner, branch st
 	}
 
 	// 3 Ensure that we have enough context in the local history to cherry-pick
-	if _, err := runner.Run(ctx, "git", "fetch", fmt.Sprintf("--shallow-since=%s", opts.MergeBase.Committer.Date.Format("2006-01-02"))); err != nil {
+	if _, err := runner.Run(ctx, "git", "fetch", fmt.Sprintf("--shallow-since=%d", opts.MergeBase.Committer.Date.Unix())); err != nil {
 		return fmt.Errorf("error fetching source commit: %w", err)
 	}
 

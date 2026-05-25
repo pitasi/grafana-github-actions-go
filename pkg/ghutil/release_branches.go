@@ -14,6 +14,7 @@ import (
 
 type BranchClient interface {
 	ListBranches(ctx context.Context, owner string, repo string, opts *github.BranchListOptions) ([]*github.Branch, *github.Response, error)
+	GetBranch(ctx context.Context, owner, repo, branch string, followRedirects bool) (*github.Branch, *github.Response, error)
 }
 
 type Branch struct {
@@ -122,4 +123,12 @@ func GetReleaseBranches(ctx context.Context, log *slog.Logger, client BranchClie
 	}
 
 	return branches, nil
+}
+
+func GetReleaseBranchByName(ctx context.Context, client BranchClient, owner, repo string, name string) (Branch, error) {
+	b, _, err := client.GetBranch(ctx, owner, repo, name, true)
+	return Branch{
+		Name: b.GetName(),
+		SHA:  b.GetCommit().GetSHA(),
+	}, err
 }

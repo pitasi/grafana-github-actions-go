@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v50/github"
-	"github.com/grafana/grafana-github-actions-go/pkg/ghutil"
 	"github.com/sethvargo/go-githubactions"
 )
 
@@ -71,22 +69,19 @@ func main() {
 		panic(err)
 	}
 
-	log = log.With("repo", fmt.Sprintf("%s/%s", prInfo.RepoOwner, prInfo.RepoName), "pull_request", prInfo.Pr.GetNumber())
-
-	branches, err := ghutil.GetReleaseBranches(ctx, log, client.Repositories, prInfo.RepoOwner, prInfo.RepoName)
-	if err != nil {
-		log.Error("error getting branches", "error", err)
-		panic(err)
+	if !prInfo.Pr.GetMerged() {
+		panic("PR hasn't been merged yet")
 	}
 
-	targets, err := BackportTargetsFromPayload(branches, prInfo)
-	if err != nil {
-		if errors.Is(err, ErrorNotMerged) {
-			log.Warn("pull request is not merged; nothing to do")
-			return
-		}
+	if len(prInfo.Labels) == 0 {
+		panic("PR has no labels")
+	}
 
-		log.Error("error getting backport targets", "error", err)
+	log = log.With("repo", fmt.Sprintf("%s/%s", prInfo.RepoOwner, prInfo.RepoName), "pull_request", prInfo.Pr.GetNumber())
+
+	targetNames := BackportTargetsFromLabels(prInfo.Labels, "backport ")
+	targets, err := BackportTargets(ctx, log, client.Repositories, prInfo.RepoOwner, prInfo.RepoName, targetNames)
+	if err != nil {
 		panic(err)
 	}
 

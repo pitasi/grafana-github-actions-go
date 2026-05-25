@@ -77,48 +77,6 @@ func TestMostRecentBranch(t *testing.T) {
 	assertBranch(t, "10", "2", branches, "release-10.2.4")
 }
 
-func TestBackportTarget(t *testing.T) {
-	assertError := func(t *testing.T, label string, branches []*github.Branch) {
-		t.Helper()
-		b, err := BackportTarget(label, branches)
-		assert.Error(t, err)
-		assert.Empty(t, b)
-	}
-
-	assertBranch := func(t *testing.T, label string, branches []*github.Branch, branch string) {
-		t.Helper()
-		b, err := BackportTarget(label, branches)
-		assert.NoError(t, err)
-		assert.Equal(t, branch, b.Name)
-	}
-
-	branches := []*github.Branch{
-		{Name: github.String("release-11.0.1")},
-		{Name: github.String("release-1.2.3")},
-		{Name: github.String("release-11.0.1+security-01")},
-		{Name: github.String("release-10.0.0")},
-		{Name: github.String("release-10.2.3")},
-		{Name: github.String("release-10.2.4")},
-		{Name: github.String("release-10.2.4+security-01")},
-		{Name: github.String("release-12.0.3")},
-		{Name: github.String("release-12.1.3")},
-		{Name: github.String("release-12.0.15")},
-		{Name: github.String("release-12.1.15")},
-		{Name: github.String("release-12.2.12")},
-	}
-
-	assertError(t, "backport v3.2.x", branches)
-	assertError(t, "backport v4.0.x", branches)
-	assertError(t, "backport v13.0.x", branches)
-	assertError(t, "backport v10.5.x", branches)
-	assertError(t, "backport v11.8.x", branches)
-	assertBranch(t, "backport v11.0.x", branches, "release-11.0.1")
-	assertBranch(t, "backport v12.1.x", branches, "release-12.1.15")
-	assertBranch(t, "backport v12.0.x", branches, "release-12.0.15")
-	assertBranch(t, "backport v1.2.x", branches, "release-1.2.3")
-	assertBranch(t, "backport v10.2.x", branches, "release-10.2.4")
-}
-
 type TestBackportClient struct {
 	CreateFunc        func(ctx context.Context, owner string, repo string, pull *github.NewPullRequest) (*github.PullRequest, *github.Response, error)
 	CreateCommentFunc func(ctx context.Context, owner, repo string, number int, comment *github.IssueComment) (*github.IssueComment, *github.Response, error)
@@ -234,7 +192,7 @@ func TestBackport(t *testing.T) {
 		require.Equal(t, []string{
 			"git fetch origin asdf1234",
 			"git fetch origin release-12.0.0:refs/remotes/origin/release-12.0.0",
-			"git fetch --shallow-since=2020-01-02",
+			"git fetch --shallow-since=1577923200",
 			"git checkout -b backport-100-to-release-12.0.0 origin/release-12.0.0",
 			"git cherry-pick -x asdf1234",
 			"git push origin backport-100-to-release-12.0.0",
