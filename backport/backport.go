@@ -41,6 +41,9 @@ type BackportOpts struct {
 
 	// MergeBase is used to determine how deep in the history to fetch for the cherry-pick to work
 	MergeBase *github.Commit
+
+	// RunID is the ID of the run of the GitHub action that is running this.
+	RunID string
 }
 
 type BackportClient interface {
@@ -66,7 +69,7 @@ func Push(ctx context.Context, runner CommandRunner, branch string) error {
 func CreatePullRequest(ctx context.Context, client BackportClient, issueClient IssueClient, branch string, opts BackportOpts) (*github.PullRequest, error) {
 	title := fmt.Sprintf("[%s] %s", opts.Target.Name, opts.SourceTitle)
 
-	body := fmt.Sprintf("Backport %s from #%d\n\n---\n\n%s", opts.SourceSHA, opts.PullRequestNumber, opts.SourceBody)
+	body := fmt.Sprintf("Backport %s from #%d <sup>[job run](https://github.com/%s/%s/actions/runs/%s)</sup>\n\n---\n\n%s", opts.SourceSHA, opts.PullRequestNumber, opts.Owner, opts.Repository, opts.RunID, opts.SourceBody)
 
 	pr, _, err := client.Create(ctx, opts.Owner, opts.Repository, &github.NewPullRequest{
 		Title: github.String(title),
