@@ -4,9 +4,6 @@ inputs:
   token:
     description: GitHub token with access to all necessary repositories
     required: true
-  labelsToAdd:
-    description: Comma delimited list of labels to add to the backport PRs
-    required: true
   path:
     required: false
     default: "."
@@ -69,7 +66,6 @@ runs:
     - shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.token }}
-        INPUT_LABELS_TO_ADD: ${{ inputs.labels_to_add }}
         DIR: ${{ inputs.path }}
         PR_LABEL: ${{ inputs.pr_label }}
         PR_NUMBER: ${{ inputs.pr_number }}
