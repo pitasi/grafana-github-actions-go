@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/google/go-github/v50/github"
+	"github.com/grafana/grafana-github-actions-go/pkg/ghgql"
 	"github.com/sethvargo/go-githubactions"
 )
 
@@ -108,7 +109,8 @@ func main() {
 		}
 
 		commandRunner := NewShellCommandRunner(log)
-		prOut, err := Backport(ctx, log, client.PullRequests, client.Issues, client.Issues, commandRunner, opts)
+		gqlClient := ghgql.NewClient(token)
+		prOut, err := Backport(ctx, log, client.PullRequests, client.Issues, client.Issues, client.Git, gqlClient, commandRunner, opts)
 		if err != nil {
 			log.Error("backport failed", "error", err)
 			continue

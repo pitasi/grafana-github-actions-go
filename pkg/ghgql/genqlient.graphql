@@ -26,6 +26,30 @@ query getMilestonedPullRequests($owner: String!, $repo: String!, $milestoneNumbe
   }
 }
 
+mutation createSignedCommitOnBranch(
+  $repo: String!
+  $branch: String!
+  $oid: GitObjectID!
+  $headline: String!
+  $body: String!
+  $additions: [FileAddition!]
+  $deletions: [FileDeletion!]
+) {
+  createCommitOnBranch(
+    input: {
+      branch: { repositoryNameWithOwner: $repo, branchName: $branch }
+      expectedHeadOid: $oid
+      fileChanges: { additions: $additions, deletions: $deletions }
+      message: { headline: $headline, body: $body }
+    }
+  ) {
+    commit {
+      url
+      oid
+    }
+  }
+}
+
 query getMilestonesWithTitle($owner: String!, $repo: String!, $title: String!) {
   repository(owner: $owner, name: $repo) {
     milestones(query: $title, first: 30) {

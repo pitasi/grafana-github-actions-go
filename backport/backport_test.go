@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/v50/github"
+	"github.com/grafana/grafana-github-actions-go/pkg/ghgql"
 	"github.com/grafana/grafana-github-actions-go/pkg/ghutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -93,6 +94,26 @@ func (c *TestBackportClient) Edit(ctx context.Context, owner string, repo string
 	return c.EditFunc(ctx, owner, repo, number, issue)
 }
 
+// noopRefClient is a RefClient stub that records the branches it was asked to create.
+type noopRefClient struct{ refs []string }
+
+func (c *noopRefClient) CreateRef(ctx context.Context, owner, repo string, ref *github.Reference) (*github.Reference, *github.Response, error) {
+	c.refs = append(c.refs, ref.GetRef())
+	return ref, nil, nil
+}
+
+// noopSignedCommitClient is a SignedCommitClient stub that records its inputs.
+type noopSignedCommitClient struct {
+	branches  []string
+	headlines []string
+}
+
+func (c *noopSignedCommitClient) CreateSignedCommitOnBranch(ctx context.Context, repo, branch, expectedHeadOid, headline, body string, changes []ghgql.FileChange) (string, error) {
+	c.branches = append(c.branches, branch)
+	c.headlines = append(c.headlines, headline)
+	return "0000000000000000000000000000000000000000", nil
+}
+
 func TestBackport(t *testing.T) {
 	t.Run("Successful backport", func(t *testing.T) {
 		createFn := func(ctx context.Context, owner string, repo string, pull *github.NewPullRequest) (*github.PullRequest, *github.Response, error) {
@@ -117,7 +138,23 @@ func TestBackport(t *testing.T) {
 			}, nil, nil
 		}
 
-		runner := NewNoOpRunner()
+		// The publish step reads files from the working tree, so run this test from a temp dir
+		// with the expected file present. mockRunner is given canned outputs so the diff/log
+		// calls return enough info for publish to proceed.
+		tmpDir := t.TempDir()
+		oldwd, _ := os.Getwd()
+		require.NoError(t, os.Chdir(tmpDir))
+		t.Cleanup(func() { _ = os.Chdir(oldwd) })
+		require.NoError(t, os.WriteFile("backported-file.txt", []byte("hello\n"), 0o644))
+
+		runner := newMockRunner()
+		runner.Outputs = map[string]string{
+			"git rev-parse origin/release-12.0.0":                  "fdsa4321",
+			"git diff --no-renames --name-status -z fdsa4321 HEAD": "A\x00backported-file.txt\x00",
+			"git log -1 --format=%B HEAD":                          "Example Bug Fix\n\nBody paragraph",
+			"git log -1 --format=%an asdf1234":                     "Original Author",
+			"git log -1 --format=%ae asdf1234":                     "orig@example.com",
+		}
 
 		client := &TestBackportClient{
 			CreateFunc:        createFn,
@@ -126,7 +163,9 @@ func TestBackport(t *testing.T) {
 		}
 
 		commitDate, _ := time.Parse(time.RFC3339, "2020-01-02T00:00:00Z")
-		pr, err := Backport(context.Background(), slog.Default(), client, client, client, runner, BackportOpts{
+		refClient := &noopRefClient{}
+		gqlClient := &noopSignedCommitClient{}
+		pr, err := Backport(context.Background(), slog.Default(), client, client, client, refClient, gqlClient, runner, BackportOpts{
 			PullRequestNumber: 100,
 			SourceSHA:         "asdf1234",
 			SourceTitle:       "Example Bug Fix",
@@ -188,20 +227,30 @@ func TestBackport(t *testing.T) {
 			require.NotEmptyf(t, v.GetName(), "label at index '%d' is empty", i)
 		}
 
-		// Ensure that the cherry-pick commands fetch, create a new branch, cherry-pick the pr commit, and push
+		// Ensure that the cherry-pick commands fetch, create a new branch, cherry-pick the pr commit,
+		// then read everything needed to publish the commit via the GraphQL API.
 		require.Equal(t, []string{
 			"git fetch origin asdf1234",
 			"git fetch origin release-12.0.0:refs/remotes/origin/release-12.0.0",
 			"git fetch --shallow-since=1577923200",
 			"git checkout -b backport-100-to-release-12.0.0 origin/release-12.0.0",
 			"git cherry-pick -x asdf1234",
-			"git push origin backport-100-to-release-12.0.0",
+			"git rev-parse origin/release-12.0.0",
+			"git diff --no-renames --name-status -z fdsa4321 HEAD",
+			"git log -1 --format=%B HEAD",
+			"git log -1 --format=%an asdf1234",
+			"git log -1 --format=%ae asdf1234",
 		}, runner.Commands)
+		// Ensure that the head branch was created and the signed commit mutation was invoked
+		// with the headline derived from the local cherry-picked commit's message.
+		require.Equal(t, []string{"refs/heads/backport-100-to-release-12.0.0"}, refClient.refs)
+		require.Equal(t, []string{"backport-100-to-release-12.0.0"}, gqlClient.branches)
+		require.Equal(t, []string{"Example Bug Fix"}, gqlClient.headlines)
 	})
 
 	t.Run("Backport comments", func(t *testing.T) {
 		// Simulate an error being returned from the 'git cherry-pick command'
-		runner := NewErrorRunner(map[string]error{
+		runner := newErrorRunner(map[string]error{
 			"git cherry-pick -x asdf1234": errors.New("The process '/usr/bin/git' failed with exit code 1"),
 		})
 
@@ -236,7 +285,7 @@ func TestBackport(t *testing.T) {
 
 		commitDate, _ := time.Parse(time.RFC3339, "2020-01-02T00:00:00Z")
 
-		_, err := Backport(context.Background(), slog.Default(), client, client, client, runner, BackportOpts{
+		_, err := Backport(context.Background(), slog.Default(), client, client, client, &noopRefClient{}, &noopSignedCommitClient{}, runner, BackportOpts{
 			PullRequestNumber: 100,
 			SourceSHA:         "asdf1234",
 			SourceTitle:       "Example Bug Fix",

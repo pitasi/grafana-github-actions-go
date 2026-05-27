@@ -9,3 +9,7 @@ bindings:
     type: string
   DateTime:
     type: "time.Time"
+  GitObjectID:
+    type: string
+  Base64String:
+    type: string
