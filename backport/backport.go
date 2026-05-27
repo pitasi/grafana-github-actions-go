@@ -58,10 +58,18 @@ type CommentClient interface {
 	CreateComment(ctx context.Context, owner, repo string, number int, comment *github.IssueComment) (*github.IssueComment, *github.Response, error)
 }
 
-func Push(ctx context.Context, runner CommandRunner, branch string) error {
-	// Retry pushing every 5 seconds for a full minute
+// PublishCherryPick uploads the local cherry-picked commit to GitHub as a
+// signed (Verified) commit via the Git Data API and creates the backport
+// branch ref pointing at it — no `git push` required. Retries for up to a
+// minute to absorb transient API errors.
+func PublishCherryPick(ctx context.Context, log *slog.Logger, gh ghutil.SignedCommitGitClient, runner ghutil.GitRunner, branch string, opts BackportOpts) error {
 	return retry(func() error {
-		_, err := runner.Run(ctx, "git", "push", "origin", branch)
+		_, err := ghutil.PublishSignedCommit(ctx, log, gh, runner, ghutil.SignedCommitOpts{
+			Owner:      opts.Owner,
+			Repository: opts.Repository,
+			BaseBranch: opts.Target.Name,
+			HeadBranch: branch,
+		})
 		return err
 	}, 12, time.Second*5)
 }
@@ -125,18 +133,18 @@ func retry(fn func() error, count int, d time.Duration) error {
 	return err
 }
 
-func backport(ctx context.Context, log *slog.Logger, client BackportClient, issueClient IssueClient, runner CommandRunner, opts BackportOpts) (*github.PullRequest, error) {
+func backport(ctx context.Context, log *slog.Logger, client BackportClient, issueClient IssueClient, gitClient ghutil.SignedCommitGitClient, runner CommandRunner, gitRunner ghutil.GitRunner, opts BackportOpts) (*github.PullRequest, error) {
 	// 1. Run CLI commands to create a branch and cherry-pick
 	//   * If the cherry-pick fails, write a comment in the source PR with instructions on manual backporting
-	// 2. git push
+	// 2. Publish the cherry-pick via the Git Data API so the commit is signed (Verified) by GitHub
 	// 3. Open the pull request against the appropriate release branch
 	branch := BackportBranch(opts.PullRequestNumber, opts.Target.Name)
 	if err := CreateCherryPickBranch(ctx, runner, branch, opts); err != nil {
 		return nil, fmt.Errorf("error cherry-picking: %w", err)
 	}
 
-	if err := Push(ctx, runner, branch); err != nil {
-		return nil, fmt.Errorf("error pushing: %w", err)
+	if err := PublishCherryPick(ctx, log, gitClient, gitRunner, branch, opts); err != nil {
+		return nil, fmt.Errorf("error publishing cherry-pick: %w", err)
 	}
 
 	var (
@@ -161,7 +169,7 @@ func backport(ctx context.Context, log *slog.Logger, client BackportClient, issu
 	return pr, nil
 }
 
-func Backport(ctx context.Context, log *slog.Logger, backportClient BackportClient, commentClient CommentClient, issueClient IssueClient, execClient CommandRunner, opts BackportOpts) (*github.PullRequest, error) {
+func Backport(ctx context.Context, log *slog.Logger, backportClient BackportClient, commentClient CommentClient, issueClient IssueClient, gitClient ghutil.SignedCommitGitClient, execClient CommandRunner, gitRunner ghutil.GitRunner, opts BackportOpts) (*github.PullRequest, error) {
 	// Remove any `backport` related labels from the original PR, and mark this PR as a "backport"
 	labels := []*github.Label{
 		{Name: github.String("backport")},
@@ -176,7 +184,7 @@ func Backport(ctx context.Context, log *slog.Logger, backportClient BackportClie
 	}
 
 	opts.Labels = labels
-	pr, err := backport(ctx, log, backportClient, issueClient, execClient, opts)
+	pr, err := backport(ctx, log, backportClient, issueClient, gitClient, execClient, gitRunner, opts)
 	if err != nil {
 		if err := CommentFailure(ctx, commentClient, FailureOpts{
 			BackportOpts: opts,

@@ -93,6 +93,52 @@ func (c *TestBackportClient) Edit(ctx context.Context, owner string, repo string
 	return c.EditFunc(ctx, owner, repo, number, issue)
 }
 
+// fakeSignedCommitGitClient satisfies ghutil.SignedCommitGitClient for tests
+// without touching the network.
+type fakeSignedCommitGitClient struct {
+	createdRef string
+	commit     *github.Commit
+}
+
+func (f *fakeSignedCommitGitClient) GetRef(_ context.Context, _, _, ref string) (*github.Reference, *github.Response, error) {
+	return &github.Reference{
+		Ref:    github.String(ref),
+		Object: &github.GitObject{SHA: github.String("base-sha")},
+	}, nil, nil
+}
+func (f *fakeSignedCommitGitClient) GetCommit(_ context.Context, _, _, _ string) (*github.Commit, *github.Response, error) {
+	return &github.Commit{Tree: &github.Tree{SHA: github.String("base-tree")}}, nil, nil
+}
+func (f *fakeSignedCommitGitClient) CreateBlob(_ context.Context, _, _ string, _ *github.Blob) (*github.Blob, *github.Response, error) {
+	return &github.Blob{SHA: github.String("blob-sha")}, nil, nil
+}
+func (f *fakeSignedCommitGitClient) CreateTree(_ context.Context, _, _, _ string, _ []*github.TreeEntry) (*github.Tree, *github.Response, error) {
+	return &github.Tree{SHA: github.String("tree-sha")}, nil, nil
+}
+func (f *fakeSignedCommitGitClient) CreateCommit(_ context.Context, _, _ string, c *github.Commit) (*github.Commit, *github.Response, error) {
+	f.commit = c
+	return &github.Commit{SHA: github.String("commit-sha")}, nil, nil
+}
+func (f *fakeSignedCommitGitClient) CreateRef(_ context.Context, _, _ string, ref *github.Reference) (*github.Reference, *github.Response, error) {
+	f.createdRef = ref.GetRef()
+	return ref, nil, nil
+}
+
+// stubGitRunner returns canned stdout for the git invocations PublishSignedCommit
+// makes. The diff is intentionally a delete-only so no working-tree file needs
+// to exist on disk for the test.
+type stubGitRunner struct{}
+
+func (stubGitRunner) Output(_ context.Context, args ...string) ([]byte, error) {
+	switch args[0] {
+	case "show":
+		return []byte("Cherry Picker\nbot@example.com\n2020-01-02T03:04:05Z\x00Backport asdf1234\n"), nil
+	case "diff":
+		return []byte("D\x00removed.txt\x00"), nil
+	}
+	return nil, nil
+}
+
 func TestBackport(t *testing.T) {
 	t.Run("Successful backport", func(t *testing.T) {
 		createFn := func(ctx context.Context, owner string, repo string, pull *github.NewPullRequest) (*github.PullRequest, *github.Response, error) {
@@ -125,8 +171,11 @@ func TestBackport(t *testing.T) {
 			EditFunc:          editFn,
 		}
 
+		gitClient := &fakeSignedCommitGitClient{}
+		gitRunner := stubGitRunner{}
+
 		commitDate, _ := time.Parse(time.RFC3339, "2020-01-02T00:00:00Z")
-		pr, err := Backport(context.Background(), slog.Default(), client, client, client, runner, BackportOpts{
+		pr, err := Backport(context.Background(), slog.Default(), client, client, client, gitClient, runner, gitRunner, BackportOpts{
 			PullRequestNumber: 100,
 			SourceSHA:         "asdf1234",
 			SourceTitle:       "Example Bug Fix",
@@ -188,15 +237,23 @@ func TestBackport(t *testing.T) {
 			require.NotEmptyf(t, v.GetName(), "label at index '%d' is empty", i)
 		}
 
-		// Ensure that the cherry-pick commands fetch, create a new branch, cherry-pick the pr commit, and push
+		// The cherry-pick step still uses the CommandRunner; the push is now
+		// replaced by Git Data API calls and is exercised separately via
+		// fakeSignedCommitGitClient.
 		require.Equal(t, []string{
 			"git fetch origin asdf1234",
 			"git fetch origin release-12.0.0:refs/remotes/origin/release-12.0.0",
 			"git fetch --shallow-since=1577923200",
 			"git checkout -b backport-100-to-release-12.0.0 origin/release-12.0.0",
 			"git cherry-pick -x asdf1234",
-			"git push origin backport-100-to-release-12.0.0",
 		}, runner.Commands)
+
+		// The new branch ref must be created via the API, not via `git push`,
+		// and the commit must be created with Committer left nil so GitHub
+		// fills it in and signs the commit.
+		require.Equal(t, "refs/heads/backport-100-to-release-12.0.0", gitClient.createdRef)
+		require.NotNil(t, gitClient.commit)
+		require.Nil(t, gitClient.commit.Committer)
 	})
 
 	t.Run("Backport comments", func(t *testing.T) {
@@ -234,9 +291,12 @@ func TestBackport(t *testing.T) {
 			EditFunc:          editFn,
 		}
 
+		gitClient := &fakeSignedCommitGitClient{}
+		gitRunner := stubGitRunner{}
+
 		commitDate, _ := time.Parse(time.RFC3339, "2020-01-02T00:00:00Z")
 
-		_, err := Backport(context.Background(), slog.Default(), client, client, client, runner, BackportOpts{
+		_, err := Backport(context.Background(), slog.Default(), client, client, client, gitClient, runner, gitRunner, BackportOpts{
 			PullRequestNumber: 100,
 			SourceSHA:         "asdf1234",
 			SourceTitle:       "Example Bug Fix",
