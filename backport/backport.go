@@ -58,14 +58,6 @@ type CommentClient interface {
 	CreateComment(ctx context.Context, owner, repo string, number int, comment *github.IssueComment) (*github.IssueComment, *github.Response, error)
 }
 
-func Push(ctx context.Context, runner CommandRunner, branch string) error {
-	// Retry pushing every 5 seconds for a full minute
-	return retry(func() error {
-		_, err := runner.Run(ctx, "git", "push", "origin", branch)
-		return err
-	}, 12, time.Second*5)
-}
-
 func CreatePullRequest(ctx context.Context, client BackportClient, issueClient IssueClient, branch string, opts BackportOpts) (*github.PullRequest, error) {
 	title := fmt.Sprintf("[%s] %s", opts.Target.Name, opts.SourceTitle)
 
@@ -125,18 +117,24 @@ func retry(fn func() error, count int, d time.Duration) error {
 	return err
 }
 
-func backport(ctx context.Context, log *slog.Logger, client BackportClient, issueClient IssueClient, runner CommandRunner, opts BackportOpts) (*github.PullRequest, error) {
+func backport(ctx context.Context, log *slog.Logger, client BackportClient, issueClient IssueClient, refClient RefClient, gqlClient SignedCommitClient, runner CommandRunner, opts BackportOpts) (*github.PullRequest, error) {
 	// 1. Run CLI commands to create a branch and cherry-pick
 	//   * If the cherry-pick fails, write a comment in the source PR with instructions on manual backporting
-	// 2. git push
+	// 2. Publish the cherry-picked commit via createCommitOnBranch so it is signed by GitHub
 	// 3. Open the pull request against the appropriate release branch
 	branch := BackportBranch(opts.PullRequestNumber, opts.Target.Name)
 	if err := CreateCherryPickBranch(ctx, runner, branch, opts); err != nil {
 		return nil, fmt.Errorf("error cherry-picking: %w", err)
 	}
 
-	if err := Push(ctx, runner, branch); err != nil {
-		return nil, fmt.Errorf("error pushing: %w", err)
+	// Publish the cherry-picked commit via the GitHub API so it is signed by GitHub's web-flow
+	// key (shown as Verified). Unlike the old `git push` path, this is intentionally NOT wrapped
+	// in a retry: it consists of two non-idempotent API calls (createRef + createCommitOnBranch),
+	// and blind retries after a partial success would either fail with 422 "ref already exists"
+	// (handled inline in PublishViaAPI) or with "expected head oid" mismatches. The underlying
+	// HTTP clients retry transient errors on their own.
+	if err := PublishViaAPI(ctx, runner, refClient, gqlClient, branch, opts); err != nil {
+		return nil, fmt.Errorf("error publishing backport branch: %w", err)
 	}
 
 	var (
@@ -161,7 +159,7 @@ func backport(ctx context.Context, log *slog.Logger, client BackportClient, issu
 	return pr, nil
 }
 
-func Backport(ctx context.Context, log *slog.Logger, backportClient BackportClient, commentClient CommentClient, issueClient IssueClient, execClient CommandRunner, opts BackportOpts) (*github.PullRequest, error) {
+func Backport(ctx context.Context, log *slog.Logger, backportClient BackportClient, commentClient CommentClient, issueClient IssueClient, refClient RefClient, gqlClient SignedCommitClient, execClient CommandRunner, opts BackportOpts) (*github.PullRequest, error) {
 	// Remove any `backport` related labels from the original PR, and mark this PR as a "backport"
 	labels := []*github.Label{
 		{Name: github.String("backport")},
@@ -176,7 +174,7 @@ func Backport(ctx context.Context, log *slog.Logger, backportClient BackportClie
 	}
 
 	opts.Labels = labels
-	pr, err := backport(ctx, log, backportClient, issueClient, execClient, opts)
+	pr, err := backport(ctx, log, backportClient, issueClient, refClient, gqlClient, execClient, opts)
 	if err != nil {
 		if err := CommentFailure(ctx, commentClient, FailureOpts{
 			BackportOpts: opts,

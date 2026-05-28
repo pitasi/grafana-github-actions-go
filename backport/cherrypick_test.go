@@ -31,7 +31,7 @@ func TestCreateCherryPickBranch(t *testing.T) {
 					},
 				},
 			}
-			runner = NewErrorRunner(map[string]error{
+			runner = newErrorRunner(map[string]error{
 				"git cherry-pick -x asdf1234":               errors.New("cherry-pick error"),
 				"git diff -s --exit-code .betterer.results": errors.New("command returned 1"),
 			})
@@ -73,7 +73,7 @@ func TestCreateCherryPickBranch(t *testing.T) {
 					},
 				},
 			}
-			runner = NewErrorRunner(map[string]error{
+			runner = newErrorRunner(map[string]error{
 				"git cherry-pick -x asdf1234": errors.New("cherry-pick error"),
 			})
 		)
